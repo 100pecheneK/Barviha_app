@@ -76,6 +76,6 @@ def xml_feed(request):
     xml = Selling.objects.all()
 
     xml = create_xml_feed(xml)
-    xml.replace('internal_id', 'internal-id')
+    xml = xml.replace('internal_id', 'internal-id')
 
     return HttpResponse(xml, content_type='application/xml')
