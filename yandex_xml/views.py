@@ -8,24 +8,25 @@ from xml.dom import minidom
 from datetime import datetime
 # Импорт моделей
 from selling.models import Selling
+from django.contrib.auth.models import User
 
 import datetime
 import re
 
 
 # Отображение
-def xml_feed(request):
-    def prettify(elem):
-        rough_string = ET.tostring(elem, 'utf-8')
-        reparsed = minidom.parseString(rough_string)
-        return reparsed.toprettyxml()
+def xml_feed(request, slug):
+    def is_digit(string):
+        if string.isdigit():
+            return True
+        else:
+            try:
+                float(string)
+                return True
+            except ValueError:
+                return False
 
-    def cleanhtml(raw_html):
-        cleanr = re.compile('<.*?>')
-        cleantext = re.sub(cleanr, '', raw_html)
-        return cleantext
-
-    def create_xml_feed(objects):
+    def create_xml_feed(objects, selling_user=False):
         time = datetime.datetime.now().isoformat()
         grin = '+05:00'
         time = time.split(".")[0]
@@ -40,9 +41,17 @@ def xml_feed(request):
             selling_date = selling_date.replace(' ', 'T')
             selling_date = selling_date + grin
 
-            selling_description = cleanhtml(ob.selling_description)
+            selling_user = User.objects.get(username=ob.selling_user)
+            selling_user_first_name = selling_user.first_name
 
-            offer = ET.SubElement(reality_feed, 'offer', internal_id=str(ob.id))
+            # selling_description = cleanhtml(ob.selling_description)
+            # s = 'Hello!@#!%!#&&!*!#$#%@*+_{ world!'
+            reg = re.compile('[^а-яА-Я., ]')
+            selling_description = reg.sub('', ob.selling_description)
+            # selling_description = re.compile('[^a-zA-Z ]')
+
+            offer = ET.SubElement(reality_feed, 'offer')
+            offer.set('internal-id', str(ob.id))
 
             offer__type = ET.SubElement(offer, 'type')
             offer__type.text = str(ob.selling_deal)
@@ -65,7 +74,7 @@ def xml_feed(request):
 
             offer__sales_agent = ET.SubElement(offer, 'sales-agent')
             offer__sales_agent__category = ET.SubElement(offer__sales_agent, 'name')
-            offer__sales_agent__category.text = str(ob.selling_user)
+            offer__sales_agent__category.text = str(selling_user_first_name)
             offer__sales_agent__phone = ET.SubElement(offer__sales_agent, 'phone')
             offer__sales_agent__phone.text = str(ob.selling_phone)
             offer__sales_agent__category = ET.SubElement(offer__sales_agent, 'category')
@@ -82,9 +91,10 @@ def xml_feed(request):
 
             offer__area = ET.SubElement(offer, 'area')
             offer__area__value = ET.SubElement(offer__area, 'value')
-            selling_flat_area = ob.selling_flat_area
-            if (selling_flat_area == None):
+            selling_flat_area = str(ob.selling_flat_area)
+            if not (is_digit(selling_flat_area)):
                 selling_flat_area = 0
+
             offer__area__value.text = str(selling_flat_area)
             offer__area__unit = ET.SubElement(offer__area, 'unit')
             offer__area__unit.text = 'кв. м'
@@ -92,19 +102,42 @@ def xml_feed(request):
             offer__area__description.text = str(selling_description)
 
             offer__rooms = ET.SubElement(offer, 'rooms')
-            offer__rooms.text = str(1)
-            offer__floor = ET.SubElement(offer, 'floor')
-            selling_floor = ob.selling_floor
-            if (selling_floor == None):
-                selling_floor = 1
-            offer__floor.text = str(selling_floor)
+            selling_apartment = ob.selling_apartment
+            if (selling_apartment == '1 комнатная'):
+                selling_apartment = 1
+            elif (selling_apartment == '2х комнатная'):
+                selling_apartment = 2
+            elif (selling_apartment == '3х комнатная'):
+                selling_apartment = 3
+            else:
+                selling_apartment = 1
 
-            xml = prettify(reality_feed)
-        return xml
+            offer__rooms.text = str(selling_apartment)
+            # offer__floor = ET.SubElement(offer, 'floor')
+            # selling_floor = ob.selling_floor
+            # if (selling_floor == None):
+            #     selling_floor = 1
+            # offer__floor.text = str(selling_floor)
 
-    xml = Selling.objects.all()[:1]
+            # xml = prettify(reality_feed)
+            xml_str = ET.tostring(reality_feed, encoding='utf-8')
+            # xml_str = ET.tostring(reality_feed).decode()
+            # print(xml)
+            # xml = str(xml)
+            # print(xml)
+            # xml = xml.replace('internal_id', 'internal-id')
+            # print(xml)
 
-    xml = create_xml_feed(xml)
-    xml = xml.replace('internal_id', 'internal-id')
+        return xml_str
+
+    try:
+        selling_user = User.objects.get(username=slug)
+    except:
+        return HttpResponse('Не верный логин')
+
+    if selling_user:
+        selling_user_id = selling_user.id
+        xml_data = Selling.objects.filter(selling_is_published_yandex=True, selling_user=selling_user_id)
+        xml = create_xml_feed(xml_data, selling_user)
 
     return HttpResponse(xml, content_type='application/xml')
